@@ -132,6 +132,7 @@ def crawl_college_stats_pages(name, draft_year):
 
     # 同姓同名のチェック
     same_name_counter = 1
+    stats_not_found_counter = 0
     while True:
         time.sleep(1)
         url = base_url + \
@@ -146,6 +147,7 @@ def crawl_college_stats_pages(name, draft_year):
             os.makedirs(output_directory_path_for_stats, exist_ok=True)
             with open(os.path.join(output_directory_path_for_stats, file_name), mode='w') as f:
                 f.write("Stats not found")
+            stats_not_found_counter = stats_not_found_counter+1
             break
         elif str(int(draft_year)-1) not in page.text:
             print("could not find draft year")
@@ -156,6 +158,7 @@ def crawl_college_stats_pages(name, draft_year):
             print("Scraping {} {} from {}".format(
                 first_name, last_name, draft_year))
             break
+    print("{} stats not found".format(stats_not_found_counter))
 
 
 def check():
