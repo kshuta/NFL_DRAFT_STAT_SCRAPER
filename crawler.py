@@ -1,3 +1,6 @@
+# -*- coding: utf-8 -*-
+
+
 """
 -----------------------------------------------------------------------
 -- Crawlするwebsite ----------------------------------------------------
@@ -105,7 +108,7 @@ def crawl_show_pages(urls, names):
 
         # scrapeをし、ファイルに出力
         combine_show_response = requests.get(url)
-        with open(os.path.join(output_directory_path_for_combine, file_name), mode='w') as f:
+        with open(os.path.join(output_directory_path_for_combine, file_name), mode='w', encoding='utf-8') as f:
             f.write(combine_show_response.text)
 
             # サーバーに負荷をかけすぎないために処理の一時停止・コードが正常に動いていることをユーザーに知らせるアウトプット
@@ -140,6 +143,7 @@ def crawl_college_stats_pages(name, draft_year):
         print(url)
         page = requests.get(url)
 
+        # getしたものに"404 error"という文言が入っていれば、ページが存在しなかったとのことなので次に行きます。
         if "404 error" in page.text:
             print("found 404")
             file_name = "{}-{}-{}-stats.html".format(
@@ -147,29 +151,38 @@ def crawl_college_stats_pages(name, draft_year):
             os.makedirs(output_directory_path_for_stats, exist_ok=True)
             with open(os.path.join(output_directory_path_for_stats, file_name), mode='w') as f:
                 f.write("Stats not found")
-            stats_not_found_counter = stats_not_found_counter+1
+            stats_not_found_counter = 1
             break
+
+        # getしたものにドラフト年-1
         elif str(int(draft_year)-1) not in page.text:
-            print("could not find draft year")
             same_name_counter = same_name_counter + 1
+            print("could not find draft year")
             continue
         else:
-
-            print("Scraping {} {} from {}".format(
+            file_name = "{}-{}-{}-stats.html".format(
+                first_name, last_name, draft_year)
+            os.makedirs(output_directory_path_for_stats, exist_ok=True)
+            with open(os.path.join(output_directory_path_for_stats, file_name), mode='w', encoding='utf-8') as f:
+                f.write(page.text)
+            print("Crawling {} {} from {}".format(
                 first_name, last_name, draft_year))
             break
-    print("{} stats not found".format(stats_not_found_counter))
+    return stats_not_found_counter
 
 
 def check():
     test_urls, player_names, draft_years = get_show_urls_and_draft_year(
-        "https://nflcombineresults.com/nflcombinedata.php?year=2020&pos=WR&college=")
+        combine_index_url)
 
     crawl_show_pages(test_urls, player_names)
 
+    stats_not_found_counter = list()
     for name, draft_year in zip(player_names, draft_years):
-        crawl_college_stats_pages(name, draft_year)
+        stats_not_found_counter.append(
+            crawl_college_stats_pages(name, draft_year))
 
+    print(sum(stats_not_found_counter))
     print("done")
 
 
