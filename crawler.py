@@ -28,6 +28,7 @@
     コードの生成物（枚数）：
     　combine結果詳細ページ（選手の数）
     　大学時代の戦績・ドラフト情報のページ（選手の数）
+    　選手名＋ドラフト年が入ったcsvファイル(１枚)
 -----------------------------------------------------------------------
 -----------------------------------------------------------------------
 -----------------------------------------------------------------------
@@ -44,11 +45,12 @@ import time
 import pandas as pd
 
 # URLS
-combine_index_url = "https://nflcombineresults.com/nflcombinedata.php?year=all&pos=WR&college="
+combine_index_url = "https://nflcombineresults.com/nflcombinedata.php?year=2020&pos=C&college="
 
 # directory paths
-output_directory_path_for_combine = 'crawled_files/combine_results'
-output_directory_path_for_stats = 'crawled_files/college_stats'
+output_directory_path_for_combine = './crawl_exports/combine_results'
+output_directory_path_for_stats = './crawl_exports/college_stats'
+output_directory_path_for_name_year = './crawl_exports'
 
 # 詳細画面のURL取得
 
@@ -82,28 +84,37 @@ def get_show_urls_and_draft_year(index_url):
     names = [a_tag.get_text()
              for element in tablefont_elms for a_tag in element.find_all('a')]
 
+    # Scraperで使うために選手名とドラフト年が入ったデータフレームをcsvファイルにエクスポート
+    name_year_dict = {'Player_Names': names, 'Draft Years': draft_years}
+    name_year_df = pd.DataFrame(name_year_dict)
+    if not os.path.exists(output_directory_path_for_name_year):
+        os.mkdir(output_directory_path_for_name_year)
+    file_name = os.path.join(
+        output_directory_path_for_name_year, 'player_name_draft_year.csv')
+    name_year_df.to_csv(file_name, index=False)
+
     return combine_show_urls, names, draft_years
 
 
-def crawl_show_pages(urls, names):
+def crawl_show_pages(urls, names, draft_years):
     """
         parameters:
             urls: crawlしたいページのURLの配列
             names: ファイル名作成用の選手名一覧
 
         与えられたURLSのページをcrawlingする。
-        crawlしたものは"{first_name}_{last_name}_{適当なID}"というファイル名で出力される。
+        crawlしたものは"{first_name}_{last_name}_{ドラフト年}"というファイル名で出力される。
 
     """
-    # indexをファイル名に使用するため、enumerateを使用してます。
-    index = 0
-    for url, name in zip(urls, names):
+
+    # ユーザーへ有益な出力をするためにenumerateしてます。
+    for idx, (url, name, draft_year) in enumerate(zip(urls, names, draft_years)):
         splitted_name = name.split()
         first_name = splitted_name[0]
         last_name = splitted_name[1]
 
         # 出力用のファイル名の作成・保存先フォルダの作成
-        file_name = "{}_{}_{}.html".format(first_name, last_name, index)
+        file_name = "{}_{}_{}.html".format(first_name, last_name, draft_year)
         os.makedirs(output_directory_path_for_combine, exist_ok=True)
 
         # scrapeをし、ファイルに出力
@@ -112,14 +123,14 @@ def crawl_show_pages(urls, names):
             f.write(combine_show_response.text)
 
             # サーバーに負荷をかけすぎないために処理の一時停止・コードが正常に動いていることをユーザーに知らせるアウトプット
-            print('Crawling...{}/{}'.format(index+1, len(urls)))
+            print('Crawling...{}/{}'.format(idx+1, len(urls)))
             time.sleep(1)
-        index = index+1
 
 
 def crawl_college_stats_pages(name, draft_year):
     """
         引数として渡される名前とドラフト年を用いて、大学時代の戦績をcrawlする。
+        出力ファイル名は"{first_name}_{last_name}_{draft_year}.html"
         parameters:
             name: 選手名
             draft_year: ドラフト年
@@ -143,7 +154,7 @@ def crawl_college_stats_pages(name, draft_year):
         print(url)
         page = requests.get(url)
 
-        # getしたものに"404 error"という文言が入っていれば、ページが存在しなかったとのことなので次に行きます。
+        # getしたものに"404 error"という文言が入っていれば、ページが存在しなかったとのことなので、"stats not found"と記載されたhtmlを出力
         if "404 error" in page.text:
             print("found 404")
             file_name = "{}-{}-{}-stats.html".format(
@@ -154,11 +165,12 @@ def crawl_college_stats_pages(name, draft_year):
             stats_not_found_counter = 1
             break
 
-        # getしたものにドラフト年-1
+        # getしたものにドラフト年-1の年（求める人であれば戦績のテーブルに必ず入っている）が入っているかどうかを確認。
         elif str(int(draft_year)-1) not in page.text:
             same_name_counter = same_name_counter + 1
             print("could not find draft year")
             continue
+        # 上記のif文を全てクリアすれば求める人の戦績が載っているpageであることがわかったので、ファイルに出力
         else:
             file_name = "{}-{}-{}-stats.html".format(
                 first_name, last_name, draft_year)
@@ -175,7 +187,7 @@ def check():
     test_urls, player_names, draft_years = get_show_urls_and_draft_year(
         combine_index_url)
 
-    crawl_show_pages(test_urls, player_names)
+    crawl_show_pages(test_urls, player_names, draft_years)
 
     stats_not_found_counter = list()
     for name, draft_year in zip(player_names, draft_years):

@@ -3,3 +3,5 @@ kumada.pem
 sample.html
 hello.py
 index.html
+crawl_exports/
+.DS_Store
