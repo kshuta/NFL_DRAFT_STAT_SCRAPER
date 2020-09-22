@@ -7,7 +7,7 @@
 -----------------------------------------------------------------------
 
     Combineの結果一覧ページ：
-        "https://nflcombineresults.com/nflcombinedata.php?year=all&pos=WR&college="
+        "https://nflcombineresults.com/nflcombinedata.php?year=2020&pos=WR&college="
     Combineの結果詳細ページ:
         -> 上記のページからscrapingする
     大学時代の戦績・ドラフト情報：
@@ -45,14 +45,27 @@ import time
 import pandas as pd
 
 # URLS
-combine_index_url = "https://nflcombineresults.com/nflcombinedata.php?year=2020&pos=C&college="
+combine_index_url = "https://nflcombineresults.com/nflcombinedata.php?year=2020&pos=WR&college="
 
 # directory paths
 output_directory_path_for_combine = './crawl_exports/combine_results'
 output_directory_path_for_stats = './crawl_exports/college_stats'
-output_directory_path_for_name_year = './crawl_exports'
+output_directory_path = './crawl_exports'
 
-# 詳細画面のURL取得
+
+def draft_page_scraper():
+    """
+        2020,2019年にドラフトされた選手は、大学時代の戦績が乗ったページにドラフトされた順位が載っていないため、別途ここでクロールしたページを使う。
+    """
+
+    draft_page = requests.get(
+        "https://www.pro-football-reference.com/play-index/draft-finder.cgi?request=1&year_min=1987&year_max=2020&pick_type=overall&pos%5B%5D=wr&conference=any&show=all&order_by=default")
+    file_name = "draft_page.html"
+
+    if not os.path.exists(output_directory_path):
+        os.mkdir(output_directory_path)
+    with open(os.path.join(output_directory_path, file_name), 'w') as f:
+        f.write(draft_page.text)
 
 
 def get_show_urls_and_draft_year(index_url):
@@ -81,16 +94,16 @@ def get_show_urls_and_draft_year(index_url):
     draft_years = [element.select('td')[0].get_text()
                    for element in tablefont_elms]
     # 名前の摘出
-    names = [a_tag.get_text()
+    names = [a_tag.get_text().replace('.', '')
              for element in tablefont_elms for a_tag in element.find_all('a')]
 
     # Scraperで使うために選手名とドラフト年が入ったデータフレームをcsvファイルにエクスポート
-    name_year_dict = {'Player_Names': names, 'Draft Years': draft_years}
+    name_year_dict = {'Player_Name': names, 'Draft_Year': draft_years}
     name_year_df = pd.DataFrame(name_year_dict)
-    if not os.path.exists(output_directory_path_for_name_year):
-        os.mkdir(output_directory_path_for_name_year)
+    if not os.path.exists(output_directory_path):
+        os.mkdir(output_directory_path)
     file_name = os.path.join(
-        output_directory_path_for_name_year, 'player_name_draft_year.csv')
+        output_directory_path, 'player_name_draft_year.csv')
     name_year_df.to_csv(file_name, index=False)
 
     return combine_show_urls, names, draft_years
@@ -183,7 +196,8 @@ def crawl_college_stats_pages(name, draft_year):
     return stats_not_found_counter
 
 
-def check():
+def main():
+    draft_page_scraper()
     test_urls, player_names, draft_years = get_show_urls_and_draft_year(
         combine_index_url)
 
@@ -198,4 +212,4 @@ def check():
     print("done")
 
 
-check()
+main()
