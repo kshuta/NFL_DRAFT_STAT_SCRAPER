@@ -12,6 +12,8 @@
         -> 上記のページからscrapingする
     大学時代の戦績・ドラフト情報：
         "https://www.sports-reference.com/cfb/players/{選手の姓.lower}-{選手の名.lower}-1.html
+    2020,2019のドラフト情報：
+        "https://www.pro-football-reference.com/play-index/draft-finder.cgi?request=1&year_min=1987&year_max=2020&pick_type=overall&pos%5B%5D=wr&conference=any&show=all&order_by=default"
 
 -----------------------------------------------------------------------
 -----------------------------------------------------------------------
@@ -39,13 +41,14 @@
 # Imports
 import requests
 from bs4 import BeautifulSoup as bs
-import re
 import os
 import time
 import pandas as pd
 
 # URLS
 combine_index_url = "https://nflcombineresults.com/nflcombinedata.php?year=2020&pos=WR&college="
+draft_table_url = "https://www.pro-football-reference.com/play-index/draft-finder.cgi?request=1&year_min=1987&year_max=2020&pick_type=overall&pos%5B%5D=wr&conference=any&show=all&order_by=default"
+
 
 # directory paths
 output_directory_path_for_combine = './crawl_exports/combine_results'
@@ -53,13 +56,12 @@ output_directory_path_for_stats = './crawl_exports/college_stats'
 output_directory_path = './crawl_exports'
 
 
-def draft_page_scraper():
+def draft_page_crawler():
     """
         2020,2019年にドラフトされた選手は、大学時代の戦績が乗ったページにドラフトされた順位が載っていないため、別途ここでクロールしたページを使う。
     """
 
-    draft_page = requests.get(
-        "https://www.pro-football-reference.com/play-index/draft-finder.cgi?request=1&year_min=1987&year_max=2020&pick_type=overall&pos%5B%5D=wr&conference=any&show=all&order_by=default")
+    draft_page = requests.get(draft_table_url)
     file_name = "draft_page.html"
 
     if not os.path.exists(output_directory_path):
@@ -73,9 +75,10 @@ def get_show_urls_and_draft_year(index_url):
         parameters:
             index_url: 詳細ページのURLを含んだ一覧ページのURL
         returns:
-            <list>urls, <list>names, <list>draft_year
+            <list>urls, <list>names, <list>draft_year, <list>colleges
 
         詳細画面のURLの配列、選手名の配列、ドラフト年の配列が返される
+        scraperで使うために、選手名、ドラフト年、大学名が入ったcsvファイルが出力される。
         デバッグ目的で引数として一覧ページのURLを渡すようにしている。
     """
 
@@ -97,13 +100,17 @@ def get_show_urls_and_draft_year(index_url):
     names = [a_tag.get_text().replace('.', '')
              for element in tablefont_elms for a_tag in element.find_all('a')]
 
+    colleges = [element.select(
+        'td')[2].get_text() for element in tablefont_elms]
+
     # Scraperで使うために選手名とドラフト年が入ったデータフレームをcsvファイルにエクスポート
-    name_year_dict = {'Player_Name': names, 'Draft_Year': draft_years}
+    name_year_dict = {'Player_Name': names,
+                      'Draft_Year': draft_years, 'College': colleges}
     name_year_df = pd.DataFrame(name_year_dict)
     if not os.path.exists(output_directory_path):
         os.mkdir(output_directory_path)
     file_name = os.path.join(
-        output_directory_path, 'player_name_draft_year.csv')
+        output_directory_path, 'player_name_draft_year_colleges.csv')
     name_year_df.to_csv(file_name, index=False)
 
     return combine_show_urls, names, draft_years
@@ -166,6 +173,13 @@ def crawl_college_stats_pages(name, draft_year):
             "{}-{}-{}.html".format(first_name, last_name, same_name_counter)
         print(url)
         page = requests.get(url)
+        temp_soup = bs(page.text, 'html.parser')
+        if temp_soup.select_one('tbody') is not None:
+            page_year = temp_soup.select_one('tbody').select(
+                'tr')[-1].select_one('th').get_text()
+            page_year = ''.join([num for num in page_year if num.isdecimal()])
+        else:
+            page_year = 0
 
         # getしたものに"404 error"という文言が入っていれば、ページが存在しなかったとのことなので、"stats not found"と記載されたhtmlを出力
         if "404 error" in page.text:
@@ -179,7 +193,7 @@ def crawl_college_stats_pages(name, draft_year):
             break
 
         # getしたものにドラフト年-1の年（求める人であれば戦績のテーブルに必ず入っている）が入っているかどうかを確認。
-        elif str(int(draft_year)-1) not in page.text:
+        elif str(int(draft_year)-1) != page_year:
             same_name_counter = same_name_counter + 1
             print("could not find draft year")
             continue
@@ -197,7 +211,7 @@ def crawl_college_stats_pages(name, draft_year):
 
 
 def main():
-    draft_page_scraper()
+    draft_page_crawler()
     test_urls, player_names, draft_years = get_show_urls_and_draft_year(
         combine_index_url)
 
