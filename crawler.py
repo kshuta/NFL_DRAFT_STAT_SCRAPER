@@ -1,13 +1,12 @@
 # -*- coding: utf-8 -*-
 
-
 """
 -----------------------------------------------------------------------
 -- Crawlするwebsite ----------------------------------------------------
 -----------------------------------------------------------------------
 
     Combineの結果一覧ページ：
-        "https://nflcombineresults.com/nflcombinedata.php?year=2020&pos=WR&college="
+        "https://nflcombineresults.com/nflcombinedata.php?year=all&pos=WR&college="
     Combineの結果詳細ページ:
         -> 上記のページからscrapingする
     大学時代の戦績・ドラフト情報：
@@ -46,7 +45,7 @@ import time
 import pandas as pd
 
 # URLS
-combine_index_url = "https://nflcombineresults.com/nflcombinedata.php?year=2020&pos=WR&college="
+combine_index_url = "https://nflcombineresults.com/nflcombinedata.php?year=all&pos=WR&college="
 draft_table_url = "https://www.pro-football-reference.com/play-index/draft-finder.cgi?request=1&year_min=1987&year_max=2020&pick_type=overall&pos%5B%5D=wr&conference=any&show=all&order_by=default"
 
 
@@ -67,7 +66,7 @@ def draft_page_crawler():
     if not os.path.exists(output_directory_path):
         os.mkdir(output_directory_path)
     with open(os.path.join(output_directory_path, file_name), 'w') as f:
-        f.write(draft_page.text)
+        f.write(draft_page.text.encode('ascii', 'ignore').decode('utf-8'))
 
 
 def get_show_urls_and_draft_year(index_url):

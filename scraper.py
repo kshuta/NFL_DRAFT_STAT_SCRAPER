@@ -53,6 +53,7 @@ list.index => O(n) x (setのなかに合った選手名分)
 # imports
 import requests
 from bs4 import BeautifulSoup as bs
+from bs4 import Comment
 import os
 import pandas as pd
 
@@ -168,14 +169,13 @@ def scraper(year, name, recent_player_names, recent_draft_round):
 
      ####### college stats #######
 
-    stats_file_name = '{}-{}-{}-stats.html'.format(first_name, last_name, year)
+    stats_file_name = '{}-{}-{}-stats.html'.format(
+        first_name.lower(), last_name.lower(), year)
     stats_base_path = 'crawl_exports/college_stats/'
     stats_file_path = os.path.join(stats_base_path, stats_file_name)
-    stats_content = open(stats_file_path, 'r').read()
-    stats_without_comment = stats_content.replace(
-        '<!--', '').replace('-->', '')
-
-    stats_soup = bs(stats_without_comment, 'html.parser')
+    stats_content = open(stats_file_path, mode="r",
+                         encoding="ascii", errors="ignore").read()
+    stats_soup = bs(stats_content, "html.parser")
 
     # draft round
     if year in [2020, 2019]:
@@ -204,10 +204,20 @@ def scraper(year, name, recent_player_names, recent_draft_round):
         career_rec.append(0)
 
     # returning yards
-    if stats_soup.find(id='kick_ret') is not None:
-        last_year_return.append(stats_soup.find(id='kick_ret').select_one(
+    # returning yards はコメントに覆われてたので、少し手間を加える。
+    comments = stats_soup.find_all(
+        string=lambda text: isinstance(text, Comment))
+    kick_ret_table = None
+    for comment in comments:
+        comment = bs(str(comment), 'html.parser')
+        kick_ret_table = comment.find(id='kick_ret')
+        if kick_ret_table:
+            break
+
+    if kick_ret_table:
+        last_year_return.append(kick_ret_table.select_one(
             'tbody').select('tr')[-1].select('td')[7].get_text())
-        career_return.append(stats_soup.find(id='kick_ret').select_one(
+        career_return.append(kick_ret_table.select_one(
             'tfoot').select('td')[7].get_text())
     else:
         last_year_return.append(0)
@@ -225,18 +235,22 @@ def get_player_name_and_round():
 
     draft_page = open('crawl_exports/draft_page.html', 'r').read()
     page_soup = bs(draft_page, 'html.parser')
-    tbody = page_soup.find(id='results').select_one('tbody')
+    if page_soup.find(id='results') is not None:
+        tbody = page_soup.find(id='results').select_one('tbody')
+    else:
+        tbody = None
 
     # creating list of player names that was drafted in 2020 or 2019
     player_names = list()
     drafted_rounds = list()
-    for row in tbody.select('tr'):
-        if row.get('class') is None:
-            if row.select_one('td').get_text() in ['2020', '2019']:
-                tds = row.select('td')
-                player_names.append(tds[3].select_one('a').get_text().replace(
-                    'Jr', '').replace('III', '').strip())
-                drafted_rounds.append(tds[1].get_text())
+    if tbody is not None:
+        for row in tbody.select('tr'):
+            if row.get('class') is None:
+                if row.select_one('td').get_text() in ['2020', '2019']:
+                    tds = row.select('td')
+                    player_names.append(tds[3].select_one('a').get_text().replace(
+                        'Jr', '').replace('III', '').strip())
+                    drafted_rounds.append(tds[1].get_text())
 
     return player_names, drafted_rounds
 
