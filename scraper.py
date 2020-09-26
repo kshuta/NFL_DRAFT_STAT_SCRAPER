@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 -----------------------------------------------------------------------
 -- Scrapeする情報 ----------------------------------------------------
@@ -19,34 +18,6 @@
 -----------------------------------------------------------------------
 -----------------------------------------------------------------------
 
------------------------------------------------------------------------
--- 全体の流れ -----------------------------------------------------------
------------------------------------------------------------------------
-    前提ファイル（crawlerによって生成されたもの)：
-            　combine結果詳細ページ（選手の数）
-    　        大学時代の戦績・ドラフト情報のページ（選手の数）
-              選手名とドラフト年が含まれたcsvファイル（１枚）
-              2019,2020のドラフトされたWRが載った一覧ページ（１枚）
-    1. 選手名とドラフト年の読み込み
-    2. 2019, 2020年のドラフト巡とドラフトされた選手名のリストをスクレーピング。あとで使うようにドラフトされた選手の名前が含まれる集合（set)を作成。
-    3. 収集するデータごとにリストを作成
-        4. combine結果詳細ページをscrapeしてlistに保存
-        5. 大学時代の戦績・ドラフト情報のページをscrapeしてlistに保存
-        6. 4,5を繰り返し
-    7.各々のリストからdfを作成
-    8. 軽くdfを綺麗にしてcsvに書き出し
-
-    コードの生成物（枚数）：
-    　収集項目のデータを持ったcsv
------------------------------------------------------------------------
------------------------------------------------------------------------
------------------------------------------------------------------------
-
-
-set化 => O(n) x1
-list参照 => O(n) x (選手名分)
-set参照 => O(1) x (選手名分)
-list.index => O(n) x (setのなかに合った選手名分)
 
 """
 
@@ -56,6 +27,7 @@ from bs4 import BeautifulSoup as bs
 from bs4 import Comment
 import os
 import pandas as pd
+from tqdm import tqdm
 
 name_year_path = './crawl_exports/player_name_draft_year_colleges.csv'
 
@@ -77,7 +49,7 @@ draft_round = list()
 def read_name_year_college():
     """
     return:
-        draft_years: ドラフト年が含まれる配列
+        draft_year_list: ドラフト年が含まれる配列
         plyaer_names: 選手名が含まれる配列
         colleges: 大学名が含まれる配列
 
@@ -89,16 +61,17 @@ def read_name_year_college():
     return list(name_year_df.Draft_Year), list(name_year_df.Player_Name), list(name_year_df.College)
 
 
-def scraper(year, name, recent_player_names, recent_draft_round):
+def scraper(draft_year, player_name, recent_player_names, recent_draft_round):
     """
     for文を多様したくないため、二つのページから同時にスクレーピングを行う。
     返す値はなく、グローバルで定義されている配列にスクレーピングした値を保存する。
     """
-    first_name = name.split()[0]
-    last_name = name.split()[1]
+    first_name = player_name.split()[0]
+    last_name = player_name.split()[1]
 
     ####### combine stats #######
-    combine_file_name = '{}_{}_{}.html'.format(first_name, last_name, year)
+    combine_file_name = '{}_{}_{}.html'.format(
+        first_name, last_name, draft_year)
     combine_base_path = 'crawl_exports/combine_results/'
     combine_file_path = os.path.join(combine_base_path, combine_file_name)
     combine_content = open(combine_file_path, 'r').read()
@@ -107,9 +80,24 @@ def scraper(year, name, recent_player_names, recent_draft_round):
         "table[class='tableperc']").select('tr')
 
     for idx, stat in enumerate(stats):
+        """
+        idx==1: 選手の身長
+        idx==2: 選手の体重
+        idx==3: 選手の手の大きさ
+        idx==4: 選手の腕の長さ
+        idx==5: 選手の40yd走の記録
+        idx==9: 選手の垂直跳びの記録
+        idx==10: 選手の立ち幅跳びの記録
+
+        長さを表す記録にはインチを表す'"'と言う表記が入っているが、出力する時に不要なので配列に追加する前に消去する。
+        その他記録（40yd走、体重）は、数値と単位の間にスペースが入っているため、spli()してから最初のentryを選択する。
+        情報が記録されていないものに関しては、'(N/A)'というテキストが入っているため、その場合は配列に'None'を追加する
+
+        """
         children = stat.select('td')
         if idx == 1:
             height = children[1].get_text()
+
             num_height_list = [num for num in height if num != "\""]
             num_height = "".join(num_height_list)
             if num_height == '(N/A)':
@@ -170,7 +158,7 @@ def scraper(year, name, recent_player_names, recent_draft_round):
      ####### college stats #######
 
     stats_file_name = '{}-{}-{}-stats.html'.format(
-        first_name.lower(), last_name.lower(), year)
+        first_name.lower(), last_name.lower(), draft_year)
     stats_base_path = 'crawl_exports/college_stats/'
     stats_file_path = os.path.join(stats_base_path, stats_file_name)
     stats_content = open(stats_file_path, mode="r",
@@ -178,10 +166,13 @@ def scraper(year, name, recent_player_names, recent_draft_round):
     stats_soup = bs(stats_content, "html.parser")
 
     # draft round
-    if year in [2020, 2019]:
-        if name in recent_player_names:
+    """
+    2020,2019にドラフトされた選手は
+    """
+    if draft_year in [2020, 2019]:
+        if player_name in recent_player_names:
             draft_round.append(
-                recent_draft_round[recent_player_names.index(name)])
+                recent_draft_round[recent_player_names.index(player_name)])
         else:
             draft_round.append(0)
 
@@ -227,40 +218,48 @@ def scraper(year, name, recent_player_names, recent_draft_round):
 def get_player_name_and_round():
     """
         return:
-            player_names: 2020,2019年にドラフトされた選手を含む配列
+            player_name_list: 2020,2019年にドラフトされた選手を含む配列
             drafted_rounds: 2020,2019年にドラフトされた選手のドラフト巡を含む配列
 
-        2019年以前の選手は、大学の戦績が載ったページにドラフト巡が載っているが、2019,2020年の選手は載っていなかったため、他のページから取得する。
+        2019年以前の選手は、大学の戦績が載ったページにドラフト巡が載っているが、2019,2020年の選手は載っていない。
+        そのため、別途クロールしてきた"draft_page.html"からドラフトラウンドを取得する。
     """
 
     draft_page = open('crawl_exports/draft_page.html', 'r').read()
     page_soup = bs(draft_page, 'html.parser')
-    if page_soup.find(id='results') is not None:
-        tbody = page_soup.find(id='results').select_one('tbody')
-    else:
-        tbody = None
 
-    # creating list of player names that was drafted in 2020 or 2019
-    player_names = list()
+    # ドラフト年、ドラフト巡が記載されたテーブルを取り出す。
+    tbody = page_soup.find(id='results').select_one('tbody')
+
+    # 選手名、ドラフト巡を保存しておくための配列を作成
+    player_name_list = list()
     drafted_rounds = list()
+
     if tbody is not None:
         for row in tbody.select('tr'):
-            if row.get('class') is None:
+            if row.get('class') is None:  # 取得した行のclassに何か指定されていると、それはデータを含まない行なので飛ばす。
+                # 一番最初の'td'にドラフト年が入っているので、それが2020か2019の場合は次に進む。
                 if row.select_one('td').get_text() in ['2020', '2019']:
                     tds = row.select('td')
-                    player_names.append(tds[3].select_one('a').get_text().replace(
-                        'Jr', '').replace('III', '').strip())
+                    # 2つ目のtdにドラフト巡、4つ目のtdに名前が入っている。
+                    player_name_list.append(tds[3].select_one('a').get_text().replace(
+                        'Jr', '').replace('III', '').strip())  # 比較する選手の名前が入った配列にヒア、名前に'Jr.'や 'III'などと行った表記はないためここで省く。
                     drafted_rounds.append(tds[1].get_text())
 
-    return player_names, drafted_rounds
+    return player_name_list, drafted_rounds
 
 
 def main():
     recent_player_names, recent_draft_round = get_player_name_and_round()
 
-    draft_years, player_names, colleges = read_name_year_college()
-    for year, name in zip(draft_years, player_names):
-        scraper(year, name, recent_player_names, recent_draft_round)
+    draft_year_list, player_name_list, colleges = read_name_year_college()
+
+    # プログレスバーの設定
+    with tqdm(total=len(player_name_list)) as pbar:
+        for idx, (draft_year, player_name) in enumerate(zip(draft_year_list, player_name_list)):
+            scraper(draft_year, player_name,
+                    recent_player_names, recent_draft_round)
+            pbar.update(1)
 
     data_dict = {'Height': heights, 'Weight': weights, 'HandSize': hand_sizes, 'ArmLength': arm_lengths, 'FortyTime': forty_times, 'Vertical': verticals, 'BroadJump': broads,
                  'LastYearRecAvg': last_year_rec, 'CareerRecAvg': career_rec, 'LastYearReturnAvg': last_year_return, 'CareerReturnAvg': career_return, 'DraftRound': draft_round, 'College': colleges}

@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 """
 -----------------------------------------------------------------------
 -- Crawlするwebsite ----------------------------------------------------
@@ -14,23 +12,6 @@
     2020,2019のドラフト情報：
         "https://www.pro-football-reference.com/play-index/draft-finder.cgi?request=1&year_min=1987&year_max=2020&pick_type=overall&pos%5B%5D=wr&conference=any&show=all&order_by=default"
 
------------------------------------------------------------------------
------------------------------------------------------------------------
-
------------------------------------------------------------------------
--- 全体の流れ -----------------------------------------------------------
------------------------------------------------------------------------
-    1. combineの結果一覧ページをcrawl (page-1)
-    2. page-1 をscrapingし、combineの結果の詳細ページのURLを配列に保存
-    3. 2から得たURLでcrawling (page-2)
-    3. page-2から選手の名前、大学をscrapingして２次元配列に保存
-    4. 3でscrapingした選手の名前、大学から大学時代の戦績・ドラフト情報ページをcrawling
-
-    コードの生成物（枚数）：
-    　combine結果詳細ページ（選手の数）
-    　大学時代の戦績・ドラフト情報のページ（選手の数）
-    　選手名＋ドラフト年が入ったcsvファイル(１枚)
------------------------------------------------------------------------
 -----------------------------------------------------------------------
 -----------------------------------------------------------------------
 
@@ -74,7 +55,7 @@ def get_show_urls_and_draft_year(index_url):
         parameters:
             index_url: 詳細ページのURLを含んだ一覧ページのURL
         returns:
-            <list>urls, <list>names, <list>draft_year, <list>colleges
+            <list>urls, <list>player_names, <list>draft_year, <list>colleges
 
         詳細画面のURLの配列、選手名の配列、ドラフト年の配列が返される
         scraperで使うために、選手名、ドラフト年、大学名が入ったcsvファイルが出力される。
@@ -96,14 +77,14 @@ def get_show_urls_and_draft_year(index_url):
     draft_years = [element.select('td')[0].get_text()
                    for element in tablefont_elms]
     # 名前の摘出
-    names = [a_tag.get_text().replace('.', '')
-             for element in tablefont_elms for a_tag in element.find_all('a')]
+    player_name_list = [a_tag.get_text().replace('.', '')
+                        for element in tablefont_elms for a_tag in element.find_all('a')]
 
     colleges = [element.select(
         'td')[2].get_text() for element in tablefont_elms]
 
     # Scraperで使うために選手名とドラフト年が入ったデータフレームをcsvファイルにエクスポート
-    name_year_dict = {'Player_Name': names,
+    name_year_dict = {'Player_Name': player_name_list,
                       'Draft_Year': draft_years, 'College': colleges}
     name_year_df = pd.DataFrame(name_year_dict)
     if not os.path.exists(output_directory_path):
@@ -112,14 +93,14 @@ def get_show_urls_and_draft_year(index_url):
         output_directory_path, 'player_name_draft_year_colleges.csv')
     name_year_df.to_csv(file_name, index=False)
 
-    return combine_show_urls, names, draft_years
+    return combine_show_urls, player_name_list, draft_years
 
 
-def crawl_show_pages(urls, names, draft_years):
+def crawl_show_pages(urls, player_name_list, draft_years):
     """
         parameters:
             urls: crawlしたいページのURLの配列
-            names: ファイル名作成用の選手名一覧
+            player_name_list: ファイル名作成用の選手名一覧
 
         与えられたURLSのページをcrawlingする。
         crawlしたものは"{first_name}_{last_name}_{ドラフト年}"というファイル名で出力される。
@@ -127,7 +108,7 @@ def crawl_show_pages(urls, names, draft_years):
     """
 
     # ユーザーへ有益な出力をするためにenumerateしてます。
-    for idx, (url, name, draft_year) in enumerate(zip(urls, names, draft_years)):
+    for idx, (url, name, draft_year) in enumerate(zip(urls, player_name_list, draft_years)):
         splitted_name = name.split()
         first_name = splitted_name[0]
         last_name = splitted_name[1]
@@ -166,6 +147,7 @@ def crawl_college_stats_pages(name, draft_year):
     # 同姓同名のチェック
     same_name_counter = 1
     stats_not_found_counter = 0
+    # urlのフォーマット、"{first_name}-{last_name}-{same_name_counter}"は、同姓同名の選手を最後のsame_name_counterで識別する。
     while True:
         time.sleep(1)
         url = base_url + \
@@ -192,10 +174,12 @@ def crawl_college_stats_pages(name, draft_year):
             break
 
         # getしたものにドラフト年-1の年（求める人であれば戦績のテーブルに必ず入っている）が入っているかどうかを確認。
+        # ドラフト年-1の年がテキストの中に入ってなければ、same_name_counterを更新してループの最初に戻る。
         elif str(int(draft_year)-1) != page_year:
             same_name_counter = same_name_counter + 1
             print("could not find draft year")
             continue
+
         # 上記のif文を全てクリアすれば求める人の戦績が載っているpageであることがわかったので、ファイルに出力
         else:
             file_name = "{}-{}-{}-stats.html".format(
@@ -211,13 +195,13 @@ def crawl_college_stats_pages(name, draft_year):
 
 def main():
     draft_page_crawler()
-    test_urls, player_names, draft_years = get_show_urls_and_draft_year(
+    test_urls, player_name_list, draft_years = get_show_urls_and_draft_year(
         combine_index_url)
 
-    crawl_show_pages(test_urls, player_names, draft_years)
+    crawl_show_pages(test_urls, player_name_list, draft_years)
 
     stats_not_found_counter = list()
-    for name, draft_year in zip(player_names, draft_years):
+    for name, draft_year in zip(player_name_list, draft_years):
         stats_not_found_counter.append(
             crawl_college_stats_pages(name, draft_year))
 
