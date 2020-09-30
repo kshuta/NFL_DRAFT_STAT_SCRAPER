@@ -1,3 +1,4 @@
+
 """
 -----------------------------------------------------------------------
 -- Scrapeする情報 ----------------------------------------------------
@@ -15,6 +16,15 @@
     - Last year return yards per attempt １リターンあたりのヤード数（大学最後の年のみ）
     - College 大学名
     - Round Drafted 指名巡 (ドラフトされなかった場合は0）
+    -- 以下追加項目 --
+    - 20yds (seconds) 20ヤード走
+    - 10yds (seconds) 10ヤード走
+    - Bench (reps) 100kgのベンチプレスを何回あげれるか。
+    - Shuttle (seconds) 短距離のシャトル走
+    - 3 cones (seconds) 3つのコーンを使ったアジリティドリル
+    - 60yds Shuttle (seconds) 60ヤードのシャトル走
+    - Career receiving yards レシービングヤード数（大学時代全て）
+    - Last Year receiving yards レシービングヤード数（大学最後の年のみ）
 -----------------------------------------------------------------------
 -----------------------------------------------------------------------
 
@@ -37,13 +47,21 @@ weights = list()
 hand_sizes = list()
 arm_lengths = list()
 forty_times = list()
+twenty_times = list()
+ten_times = list()
+benches = list()
 verticals = list()
 broads = list()
+shuttles = list()
+three_cones = list()
+sixty_yard_shuttles = list()
 last_year_rec = list()
 career_rec = list()
 last_year_return = list()
 career_return = list()
 draft_round = list()
+total_career_rec = list()
+total_last_year_rec = list()
 
 
 def read_name_year_college():
@@ -63,7 +81,7 @@ def read_name_year_college():
 
 def scraper(draft_year, player_name, recent_player_names, recent_draft_round):
     """
-    for文を多様したくないため、二つのページから同時にスクレーピングを行う。
+    for文を多用したくないため、二つのページから同時にスクレーピングを行う。
     返す値はなく、グローバルで定義されている配列にスクレーピングした値を保存する。
     """
     first_name = player_name.split()[0]
@@ -86,11 +104,17 @@ def scraper(draft_year, player_name, recent_player_names, recent_draft_round):
         idx==3: 選手の手の大きさ
         idx==4: 選手の腕の長さ
         idx==5: 選手の40yd走の記録
+        idx==6: 選手の20yd走の記録
+        idx==7: 選手の10yd走の記録
+        idx==8: 選手の100kgのベンチプレスのレップ数
         idx==9: 選手の垂直跳びの記録
         idx==10: 選手の立ち幅跳びの記録
+        idx==11: 選手のシャトル走の記録
+        idx==12: 選手の3 cone drillの記録
+        idx==13: 選手の60yd シャトル走の記録
 
         長さを表す記録にはインチを表す'"'と言う表記が入っているが、出力する時に不要なので配列に追加する前に消去する。
-        その他記録（40yd走、体重）は、数値と単位の間にスペースが入っているため、spli()してから最初のentryを選択する。
+        その他記録は、数値と単位の間にスペースが入っているため、split()してから最初のentryを選択する。
         情報が記録されていないものに関しては、'(N/A)'というテキストが入っているため、その場合は配列に'None'を追加する
 
         """
@@ -137,7 +161,27 @@ def scraper(draft_year, player_name, recent_player_names, recent_draft_round):
                 forty_times.append(None)
             else:
                 forty_times.append(float(num_forty_time))
-
+        elif idx == 6:
+            twenty_time = children[1].get_text()
+            num_twenty_time = twenty_time.split()[0]
+            if num_twenty_time == "(N/A)":
+                twenty_times.append(None)
+            else:
+                twenty_times.append(float(num_twenty_time))
+        elif idx == 7:
+            ten_time = children[1].get_text()
+            num_ten_time = ten_time.split()[0]
+            if num_ten_time == "(N/A)":
+                ten_times.append(None)
+            else:
+                ten_times.append(float(num_ten_time))
+        elif idx == 8:
+            bench = children[1].get_text()
+            num_bench = bench.split()[0]
+            if num_bench == "(N/A)":
+                benches.append(None)
+            else:
+                benches.append(int(num_bench))
         elif idx == 9:
             vertical = children[1].get_text()
             num_vertical_list = [num for num in vertical if num != "\""]
@@ -154,8 +198,29 @@ def scraper(draft_year, player_name, recent_player_names, recent_draft_round):
                 broads.append(None)
             else:
                 broads.append(float(''.join(num_broad)))
+        elif idx == 11:
+            shuttle = children[1].get_text()
+            num_shuttle = shuttle.split()[0]
+            if num_shuttle == "(N/A)":
+                shuttles.append(None)
+            else:
+                shuttles.append(float(num_shuttle))
+        elif idx == 12:
+            three_cone = children[1].get_text()
+            num_cone = three_cone.split()[0]
+            if num_cone == "(N/A)":
+                three_cones.append(None)
+            else:
+                three_cones.append(float(num_cone))
+        elif idx == 13:
+            sixty_shuttle = children[1].get_text()
+            num_sixty_shuttle = sixty_shuttle.split()[0]
+            if num_sixty_shuttle == "(N/A)":
+                sixty_yard_shuttles.append(None)
+            else:
+                sixty_yard_shuttles.append(float(num_sixty_shuttle))
 
-     ####### college stats #######
+         ####### college stats #######
 
     stats_file_name = '{}-{}-{}-stats.html'.format(
         first_name.lower(), last_name.lower(), draft_year)
@@ -190,9 +255,16 @@ def scraper(draft_year, player_name, recent_player_names, recent_draft_round):
             'tbody').select('tr')[-1].select('td')[7].get_text())
         career_rec.append(stats_soup.find(id='receiving').select_one(
             'tfoot').select('td')[7].get_text())
+        total_last_year_rec.append(stats_soup.find(id='receiving').select_one(
+            'tbody').select('tr')[-1].select('td')[6].get_text())
+        total_career_rec.append(stats_soup.find(id='receiving').select_one(
+            'tfoot').select('td')[6].get_text())
+
     else:
         last_year_rec.append(0)
         career_rec.append(0)
+        total_last_year_rec.append(0)
+        total_career_rec.append(0)
 
     # returning yards
     # returning yards はコメントに覆われてたので、少し手間を加える。
@@ -261,8 +333,8 @@ def main():
                     recent_player_names, recent_draft_round)
             pbar.update(1)
 
-    data_dict = {'Height': heights, 'Weight': weights, 'HandSize': hand_sizes, 'ArmLength': arm_lengths, 'FortyTime': forty_times, 'Vertical': verticals, 'BroadJump': broads,
-                 'LastYearRecAvg': last_year_rec, 'CareerRecAvg': career_rec, 'LastYearReturnAvg': last_year_return, 'CareerReturnAvg': career_return, 'DraftRound': draft_round, 'College': colleges}
+    data_dict = {'Height': heights, 'Weight': weights, 'HandSize': hand_sizes, 'ArmLength': arm_lengths, 'FortyTime': forty_times, 'TwentyTime': twenty_times, 'TenTime': ten_times, 'Bench': benches, 'Vertical': verticals, 'BroadJump': broads, 'Shuttle': shuttles, 'ThreeCone': three_cones, 'SixtyShuttle': sixty_yard_shuttles,
+                 'LastYearRecAvg': last_year_rec, 'CareerRecAvg': career_rec, 'LastYearReturnAvg': last_year_return, 'CareerReturnAvg': career_return, 'DraftRound': draft_round, 'College': colleges, 'DraftYear': draft_year_list, 'CareerRec': total_career_rec, 'LastYearRec': total_last_year_rec}
     data_df = pd.DataFrame(data_dict)
 
     data_df.to_csv('output.csv', index=False)

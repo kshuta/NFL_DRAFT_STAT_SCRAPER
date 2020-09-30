@@ -24,9 +24,10 @@ from bs4 import BeautifulSoup as bs
 import os
 import time
 import pandas as pd
+from tqdm import tqdm
 
-# URLS
-combine_index_url = "https://nflcombineresults.com/nflcombinedata.php?year=all&pos=WR&college="
+# url_list
+combine_index_url = "https://nflcombineresults.com/nflcombinedata.php?year=2020&pos=WR&college="
 draft_table_url = "https://www.pro-football-reference.com/play-index/draft-finder.cgi?request=1&year_min=1987&year_max=2020&pick_type=overall&pos%5B%5D=wr&conference=any&show=all&order_by=default"
 
 
@@ -55,7 +56,7 @@ def get_show_urls_and_draft_year(index_url):
         parameters:
             index_url: 詳細ページのURLを含んだ一覧ページのURL
         returns:
-            <list>urls, <list>player_names, <list>draft_year, <list>colleges
+            <list>url_list, <list>player_names, <list>draft_year, <list>colleges
 
         詳細画面のURLの配列、選手名の配列、ドラフト年の配列が返される
         scraperで使うために、選手名、ドラフト年、大学名が入ったcsvファイルが出力される。
@@ -96,10 +97,10 @@ def get_show_urls_and_draft_year(index_url):
     return combine_show_urls, player_name_list, draft_years
 
 
-def crawl_show_pages(urls, player_name_list, draft_years):
+def crawl_show_pages(url_list, player_name_list, draft_years):
     """
         parameters:
-            urls: crawlしたいページのURLの配列
+            url_list: crawlしたいページのURLの配列
             player_name_list: ファイル名作成用の選手名一覧
 
         与えられたURLSのページをcrawlingする。
@@ -108,23 +109,25 @@ def crawl_show_pages(urls, player_name_list, draft_years):
     """
 
     # ユーザーへ有益な出力をするためにenumerateしてます。
-    for idx, (url, name, draft_year) in enumerate(zip(urls, player_name_list, draft_years)):
-        splitted_name = name.split()
-        first_name = splitted_name[0]
-        last_name = splitted_name[1]
+    with tqdm(total=len(url_list)) as pbar:
+        for url, name, draft_year in zip(url_list, player_name_list, draft_years):
+            splitted_name = name.split()
+            first_name = splitted_name[0]
+            last_name = splitted_name[1]
 
-        # 出力用のファイル名の作成・保存先フォルダの作成
-        file_name = "{}_{}_{}.html".format(first_name, last_name, draft_year)
-        os.makedirs(output_directory_path_for_combine, exist_ok=True)
+            # 出力用のファイル名の作成・保存先フォルダの作成
+            file_name = "{}_{}_{}.html".format(
+                first_name, last_name, draft_year)
+            os.makedirs(output_directory_path_for_combine, exist_ok=True)
 
-        # scrapeをし、ファイルに出力
-        combine_show_response = requests.get(url)
-        with open(os.path.join(output_directory_path_for_combine, file_name), mode='w', encoding='utf-8') as f:
-            f.write(combine_show_response.text)
+            # scrapeをし、ファイルに出力
+            combine_show_response = requests.get(url)
+            with open(os.path.join(output_directory_path_for_combine, file_name), mode='w', encoding='utf-8') as f:
+                f.write(combine_show_response.text)
 
-            # サーバーに負荷をかけすぎないために処理の一時停止・コードが正常に動いていることをユーザーに知らせるアウトプット
-            print('Crawling...{}/{}'.format(idx+1, len(urls)))
-            time.sleep(1)
+                # サーバーに負荷をかけすぎないために処理の一時停止・コードが正常に動いていることをユーザーに知らせるアウトプット
+                pbar.update(1)
+                time.sleep(1)
 
 
 def crawl_college_stats_pages(name, draft_year):
@@ -164,7 +167,6 @@ def crawl_college_stats_pages(name, draft_year):
 
         # getしたものに"404 error"という文言が入っていれば、ページが存在しなかったとのことなので、"stats not found"と記載されたhtmlを出力
         if "404 error" in page.text:
-            print("found 404")
             file_name = "{}-{}-{}-stats.html".format(
                 first_name, last_name, draft_year)
             os.makedirs(output_directory_path_for_stats, exist_ok=True)
@@ -177,7 +179,6 @@ def crawl_college_stats_pages(name, draft_year):
         # ドラフト年-1の年がテキストの中に入ってなければ、same_name_counterを更新してループの最初に戻る。
         elif str(int(draft_year)-1) != page_year:
             same_name_counter = same_name_counter + 1
-            print("could not find draft year")
             continue
 
         # 上記のif文を全てクリアすれば求める人の戦績が載っているpageであることがわかったので、ファイルに出力
@@ -187,25 +188,27 @@ def crawl_college_stats_pages(name, draft_year):
             os.makedirs(output_directory_path_for_stats, exist_ok=True)
             with open(os.path.join(output_directory_path_for_stats, file_name), mode='w', encoding='utf-8') as f:
                 f.write(page.text)
-            print("Crawling {} {} from {}".format(
-                first_name, last_name, draft_year))
             break
     return stats_not_found_counter
 
 
 def main():
     draft_page_crawler()
+
+    print('Crawling combine results: ')
     test_urls, player_name_list, draft_years = get_show_urls_and_draft_year(
         combine_index_url)
 
     crawl_show_pages(test_urls, player_name_list, draft_years)
-
     stats_not_found_counter = list()
-    for name, draft_year in zip(player_name_list, draft_years):
-        stats_not_found_counter.append(
-            crawl_college_stats_pages(name, draft_year))
+    print("Crawling stats:")
+    with tqdm(total=len(player_name_list)) as pbar:
+        for name, draft_year in zip(player_name_list, draft_years):
+            stats_not_found_counter.append(
+                crawl_college_stats_pages(name, draft_year))
+            pbar.update(1)
 
-    print(sum(stats_not_found_counter))
+    print("Number of stats not found: ".format(sum(stats_not_found_counter)))
     print("done")
 
 
